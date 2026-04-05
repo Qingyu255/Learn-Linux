@@ -1,0 +1,26 @@
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % ./main.sh
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % cat a
+.txt 
+hello
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % cat b
+.txt 
+hello
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % cat c
+.txt 
+hello
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % echo 
+im now saying bello > a.txt 
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % cat a.txt
+im now saying bello
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % cat b.txt                       
+im now saying bello
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % cat c.txt                       
+im now saying bello
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % mv a.
+txt d.txt
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % cat a.txt
+cat: a.txt: No such file or directory
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % cat b.txt     
+im now saying bello
+(base) qingyuliu@Qingyus-MacBook-Pro hard_and_symbolic_links % cat c.txt     
+cat: c.txt: No such file or directory
