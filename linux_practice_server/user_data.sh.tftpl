@@ -23,6 +23,9 @@ snap install amazon-ssm-agent --classic || true
 systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service || true
 systemctl restart snap.amazon-ssm-agent.amazon-ssm-agent.service || true
 
+git config --global user.name "Qingyu255"
+git config --global user.email "qingyu2555@gmail.com"
+
 mkdir -p /home/ubuntu/work
 chown -R ubuntu:ubuntu /home/ubuntu/work
 

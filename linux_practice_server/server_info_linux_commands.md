@@ -16,6 +16,9 @@
 * getconf _NPROCESSORS_ONLN: Displays the number of processors currently online/used by the OS.
 * cpufreq-info: Shows real-time information regarding CPU frequency scaling and speed settings. [6, 8, 11, 12, 13, 14, 15, 16] 
 
+## Software
+- `glibc`: ldd --version
+
 ## Hardware Summaries and Real-Time Monitoring [17] 
 
 * lshw: A powerful tool that lists detailed information about all hardware components, including CPU, memory, and disks.
