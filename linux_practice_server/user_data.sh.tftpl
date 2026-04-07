@@ -1,0 +1,40 @@
+#!/bin/bash
+set -euxo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+apt-get update
+apt-get install -y \
+  build-essential \
+  gdb \
+  git \
+  tmux \
+  strace \
+  ltrace \
+  man-db \
+  manpages \
+  manpages-dev \
+  curl \
+  unzip \
+  snapd
+
+# Install/repair SSM Agent for Ubuntu if needed
+snap install amazon-ssm-agent --classic || true
+systemctl enable snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+systemctl restart snap.amazon-ssm-agent.amazon-ssm-agent.service || true
+
+mkdir -p /home/ubuntu/work
+chown -R ubuntu:ubuntu /home/ubuntu/work
+
+if [ -n "${repo_url}" ]; then
+  sudo -u ubuntu bash -c 'cd /home/ubuntu/work && git clone "'"${repo_url}"'"' || true
+fi
+
+cat >> /home/ubuntu/.bashrc <<'EOF'
+alias ll='ls -alF'
+alias gs='git status'
+alias tf='terraform'
+cd ~/work || true
+EOF
+
+chown ubuntu:ubuntu /home/ubuntu/.bashrc
