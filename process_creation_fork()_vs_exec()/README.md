@@ -257,11 +257,19 @@ Parent waits, child becomes the new command.
 
 ## 11. Summary table
 
-| Call                  | What it does                                      |
-| --------------------- | ------------------------------------------------- |
-| `fork()`              | creates a new child process                       |
-| `exec()` / `execve()` | replaces current process image with a new program |
-| `wait()`              | parent waits for child to finish                  |
+| Aspect | `fork()` | `exec*()` (`execve`, `execvp`, etc.) | `wait()` / `waitpid()` |
+| --- | --- | --- | --- |
+| Primary purpose | Create a child process | Replace current process image with a new program | Synchronize with child and reap exit status |
+| New process created? | Yes | No | No |
+| PID behavior | Child gets new PID; parent keeps PID | PID stays the same process identity | No PID creation; returns a child PID that changed state |
+| What happens to memory image | Child starts as copy of parent view (copy-on-write) | Old code/stack/heap replaced by new program image | Memory image unchanged |
+| Stack behavior | Child has its own virtual stack; pages copied on first write | Old stack discarded; new stack built for new program | Stack unchanged |
+| Control flow return | Returns in both parent and child | On success: does not return; on failure: returns `-1` | Returns when child state changes (or immediately with `WNOHANG`) |
+| Typical branching value | `<0` error, `0` child, `>0` parent (child PID) | `-1` on failure; success never reaches next line | Child PID on success, `-1` on error, `0` possible with `WNOHANG` |
+| Can block? | Usually short kernel work; not a long wait call | Usually not a "wait" call; cost is program loading/linking | Yes, often blocks until child exits unless non-blocking options used |
+| Typical shell usage | Shell creates child | Child becomes command (`ls`, `wc`, etc.) | Parent waits/reaps foreground child |
+| Common pairings | Often followed by child `exec*()` | Often used after `fork()` in child | Often used after `fork()` in parent |
+| Common mistake | Expect deterministic print order without sync | Expect old program to resume after success | Assume long block means heavy syscall work (often child runtime) |
 
 ---
 
@@ -716,3 +724,133 @@ If you want, next I can explain `fork()` and `exec()` using:
 1. a memory diagram,
 2. a real shell command like `grep foo file.txt`,
 3. or how pipes/redirection depend on them.
+
+---
+
+# 17. `wait()` / `waitpid()` in a bit more depth
+
+`wait()` and `waitpid()` do not create or replace a process. Their job is synchronization and cleanup.
+
+## What problem they solve
+
+When a child exits, the kernel keeps a small exit record (PID + status) until the parent collects it.
+If parent never collects it, child stays as a zombie entry.
+
+`wait()` / `waitpid()` let parent collect that record ("reap" the child).
+
+## `wait()` vs `waitpid()`
+
+- `wait(&status)`
+    - waits for any child
+    - blocks until one child changes state
+- `waitpid(pid, &status, options)`
+    - can wait for a specific child PID
+    - supports non-blocking mode with `WNOHANG`
+
+Typical foreground shell behavior:
+
+```c
+pid_t child = fork();
+if (child == 0) {
+        execvp(cmd[0], cmd);
+        perror("execvp");
+        _exit(1);
+}
+int status;
+waitpid(child, &status, 0);
+```
+
+---
+
+# 18. Cost comparison: `fork()` vs `exec()` vs `wait()`
+
+Costs depend on OS, hardware, cache state, and process size, but this is the practical ordering intuition.
+
+| Call | Main work done by kernel | Relative cost intuition |
+| --- | --- | --- |
+| `wait()` / `waitpid()` | sleep/wake + collect child status record | usually lowest |
+| `fork()` | create child task, PID, page tables, kernel bookkeeping (memory is mostly copy-on-write) | medium |
+| `exec*()` | discard old image and load new executable + dynamic libs + setup new stack/env | often highest |
+
+## Which is usually more costly: `fork()` or `exec*()`?
+
+In most real command launches, **`exec*()` is usually more costly than `fork()`**.
+
+Why:
+
+- `fork()` mostly sets up a new process structure and page tables; memory pages are usually not copied immediately because of copy-on-write.
+- `exec*()` must replace the process image, map/load the new executable, load dynamic libraries, build a new stack, and prepare runtime state.
+
+### `fork()` copy-on-write vs `exec*()` replacement (important contrast)
+
+- After `fork()`, the child has its **own virtual stack/heap/address space**, but most physical pages are initially shared read-only via copy-on-write.
+- On first write (for example, changing a local variable on the stack), kernel copies only that page for the writing process.
+- So `fork()` gives two independent processes quickly, without eagerly copying every memory page.
+
+- `exec*()` is different: it throws away old code/stack/heap and builds a new process image for the new program.
+- That means old copy-on-write sharing from `fork()` is no longer relevant after successful `exec*()`.
+- Process identity (PID) stays the same across `exec*()`, but memory image and stack are replaced.
+
+### Does `exec*()` restore the old process state afterward?
+
+No. On success, `exec*()` does **not** come back and does **not** restore old code/stack/heap.
+
+- Successful `exec*()` permanently replaces the old process image.
+- The PID is the same process identity, but it is now running a different program image.
+- If `exec*()` returns to your code, that means it failed.
+
+### When to choose `fork()`, `exec*()`, or both
+
+- Choose `fork()` when you want parent and child to continue independently from current program logic.
+- Choose `exec*()` (without `fork`) when you want the current process to become another program and never return to old logic.
+- Choose `fork()` + `exec*()` when parent must stay alive (shell/server), but child should run a different program.
+- Add `wait()` / `waitpid()` when parent should synchronize with or reap child.
+
+So `fork()` is often a lighter setup step, while `exec*()` often does the heavier program-loading work.
+
+### Caveat
+
+This is a common pattern, not a strict rule. Relative cost can change with workload:
+
+- Very large parent process metadata can make `fork()` more expensive.
+- Very small/static binaries (or warm filesystem cache) can make `exec*()` cheaper than expected.
+
+## Important nuance
+
+- `fork()` used to be very expensive when full memory copy happened eagerly.
+- Modern systems use copy-on-write, so `fork()` is much cheaper than old mental models.
+- `exec*()` can still dominate when program loading/linking is heavy.
+
+## How to read this table (most common confusion)
+
+There are two different "cost" ideas:
+
+1. **Kernel-work cost** (how much OS setup/teardown work the syscall itself does)
+2. **Wall-clock wait time** (how long your program appears blocked)
+
+The table above is mainly about **kernel-work cost**.
+
+- `waitpid()` is usually low kernel work, but it can block for a long wall-clock time if the child runs for a long time.
+- That long wait is mostly child runtime, not expensive `waitpid()` internal work.
+
+## Concrete timeline example
+
+Suppose:
+
+- `fork()` setup takes about `0.2 ms`
+- child `exec*()` loading takes about `3 ms`
+- child program itself runs for `200 ms`
+- parent calls `waitpid(child, ...)`
+
+Then parent may sit in `waitpid()` for about `200 ms`, but that does **not** mean `waitpid()` is the heaviest syscall.
+It means the child took time to finish.
+
+## Real shell command launch cost
+
+For a normal foreground command, you usually pay:
+
+1. one `fork()`
+2. one `exec*()` in child
+3. one `waitpid()` in parent
+
+So total launch latency is mostly from process creation + program loading; `waitpid()` is usually not the bottleneck.
